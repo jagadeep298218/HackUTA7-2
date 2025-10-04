@@ -3,11 +3,42 @@ var overlay = document.getElementById('overlay');
 var overlayCC = overlay.getContext('2d');
 
 
+// Track the base font size for elements
+const baseFontSize = 14;
+let currentFontSize = baseFontSize;
+let lastMagnifiedElement = null;
+
 window.onload = async function() {
-	webgazer.params.showVideoPreview = true;
+	webgazer.params.showVideoPreview = true; // h
 	const webgazerInstance = await webgazer.setRegression('ridge')
 	.setTracker('TFFacemesh')
 	.begin();
+
+	// Set up the gaze listener for magnification
+	webgazer.setGazeListener((data, elapsed) => {
+		if (!data) return;
+		const { x, y } = data;
+		
+		// Reset previous element if it exists
+		if (lastMagnifiedElement) {
+			lastMagnifiedElement.style.fontSize = `${baseFontSize}px`;
+			lastMagnifiedElement.style.transform = 'scale(1)';
+		}
+
+		// Find element at gaze point
+		const element = document.elementFromPoint(x, y);
+		if (element) {
+			// Apply magnification to text elements
+			if (element.tagName === 'P' || element.tagName === 'H1' || 
+				element.tagName === 'H2' || element.tagName === 'DIV' || 
+				element.tagName === 'SPAN') {
+				element.style.fontSize = `${Math.min(24, Math.max(baseFontSize, currentFontSize + 4))}px`;
+				element.style.transform = 'scale(1.1)';
+				element.style.transition = 'all 0.3s ease';
+				lastMagnifiedElement = element;
+			}
+		}
+	});
 	webgazer.showFaceFeedbackBox(false)
 	webgazer.showFaceOverlay(false)
 	webgazer.showPredictionPoints(false)

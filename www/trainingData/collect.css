@@ -22,3 +22,9 @@
 	width : 370px;
 	/*margin : 0px auto;*/
 }
+
+/* Magnification styles */
+p, h1, h2, div, span {
+	transition: all 0.3s ease;
+	transform-origin: center center;
+}
