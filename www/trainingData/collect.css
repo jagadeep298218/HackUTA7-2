@@ -23,7 +23,16 @@
 	/*margin : 0px auto;*/
 }
 
-/* Magnification styles */
+/* Enhanced gaze tracking styles for readable text elements */
+.readable {
+	font-size: 18px;
+	transition: font-size 0.2s ease;
+	cursor: default;
+	line-height: 1.6;
+	margin: 10px 0;
+}
+
+/* Magnification styles for general elements */
 p, h1, h2, div, span {
 	transition: all 0.3s ease;
 	transform-origin: center center;
