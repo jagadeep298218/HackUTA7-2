@@ -2,59 +2,86 @@ var vid = document.getElementById('videoel');
 var overlay = document.getElementById('overlay');
 var overlayCC = overlay.getContext('2d');
 
-
-// Track the base font size for elements
-const baseFontSize = 14;
-let currentFontSize = baseFontSize;
-let lastMagnifiedElement = null;
+// Fixation tracking variables
+const fixationThreshold = 500;   // ms to consider a fixation
+const fixations = {};            // { elementId: { start: timestamp, duration: ms } }
+let lastCall = 0;                // For throttling gaze processing
 
 window.onload = async function() {
-	webgazer.params.showVideoPreview = true; // h
+	webgazer.params.showVideoPreview = true;
 	const webgazerInstance = await webgazer.setRegression('ridge')
-	.setTracker('TFFacemesh')
-	.begin();
-
-	// Set up the gaze listener for magnification
-	webgazer.setGazeListener((data, elapsed) => {
-		if (!data) return;
-		const { x, y } = data;
-		
-		// Reset previous element if it exists
-		if (lastMagnifiedElement) {
-			lastMagnifiedElement.style.fontSize = `${baseFontSize}px`;
-			lastMagnifiedElement.style.transform = 'scale(1)';
-		}
-
-		// Find element at gaze point
-		const element = document.elementFromPoint(x, y);
-		if (element) {
-			// Apply magnification to text elements
-			if (element.tagName === 'P' || element.tagName === 'H1' || 
-				element.tagName === 'H2' || element.tagName === 'DIV' || 
-				element.tagName === 'SPAN') {
-				element.style.fontSize = `${Math.min(24, Math.max(baseFontSize, currentFontSize + 4))}px`;
-				element.style.transform = 'scale(1.1)';
-				element.style.transition = 'all 0.3s ease';
-				lastMagnifiedElement = element;
-			}
-		}
-	});
-	webgazer.showFaceFeedbackBox(false)
-	webgazer.showFaceOverlay(false)
-	webgazer.showPredictionPoints(false)
-	//must exist to make prediction but shouldn't be visible to user
-	document.getElementById('webgazerVideoFeed').style.visibility = 'hidden'
+		.setTracker('TFFacemesh')
+		.setGazeListener(onGazeData)
+		.begin();
+	
+	webgazer.showFaceFeedbackBox(false);
+	webgazer.showFaceOverlay(false);
+	webgazer.showPredictionPoints(false);
+	
+	// Must exist to make prediction but shouldn't be visible to user
+	document.getElementById('webgazerVideoFeed').style.visibility = 'hidden';
 };
 
-var ctrack = webgazer.setRegression('ridge').setTracker('TFFacemesh')
-					
+// Gaze listener with fixation logic and throttling
+function onGazeData(data, elapsed) {
+	// Throttle to 30 fps
+	const now = performance.now();
+	if (now - lastCall < 33) return;
+	lastCall = now;
+	
+	if (!data) return;
+	const { x, y } = data;
+	const elem = document.elementFromPoint(x, y);
+	
+	if (!elem || !elem.classList.contains('readable')) {
+		resetAllFixations();
+		return;
+	}
+	
+	const id = elem.dataset.id;
+	const timestamp = performance.now();
+	
+	// Start or continue fixation
+	if (!fixations[id]) {
+		fixations[id] = { start: timestamp, duration: 0 };
+	} else {
+		fixations[id].duration = timestamp - fixations[id].start;
+	}
+	
+	// Enlarge if fixation exceeds threshold
+	if (fixations[id].duration >= fixationThreshold) {
+		elem.style.fontSize = '24px';
+		elem.style.transition = 'font-size 0.2s';
+	}
+	
+	// Reset other fixations
+	Object.keys(fixations).forEach(key => {
+		if (key !== id) {
+			resetFixation(key);
+		}
+	});
+}
+
+function resetFixation(key) {
+	const elem = document.querySelector(`.readable[data-id="${key}"]`);
+	if (elem) {
+		elem.style.fontSize = '';  // Back to CSS default
+	}
+	delete fixations[key];
+}
+
+function resetAllFixations() {
+	Object.keys(fixations).forEach(resetFixation);
+}
+
+var ctrack = webgazer.setRegression('ridge').setTracker('TFFacemesh');
+
 navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia;
 window.URL = window.URL || window.webkitURL || window.msURL || window.mozURL;
 
-// check for camerasupport
+// Check for camera support
 if (navigator.getUserMedia) {
-	// set up stream
-	
+	// Set up stream
 	var videoSelector = {video : true};
 	if (window.navigator.appVersion.match(/Chrome\/(.*?) /)) {
 		var chromeVersion = parseInt(window.navigator.appVersion.match(/Chrome\/(\d+)\./)[1], 10);
@@ -62,18 +89,16 @@ if (navigator.getUserMedia) {
 			videoSelector = "video";
 		}
 	};
-
+	
 	navigator.getUserMedia(videoSelector, function( stream ) {
 		if (vid.mozCaptureStream) {
 			vid.mozSrcObject = stream;
 		} else {
-			//vid.src = (window.URL && window.URL.createObjectURL(stream)) || stream;
 			try {
-			  vid.srcObject = stream;
+				vid.srcObject = stream;
 			} catch (error) {
-			  vid.src = window.URL.createObjectURL(stream);
+				vid.src = window.URL.createObjectURL(stream);
 			}
-
 		}
 		vid.play();
 	}, function() {
@@ -86,18 +111,13 @@ if (navigator.getUserMedia) {
 vid.addEventListener('canplay', startVideo, false);
 
 function startVideo() {
-	// start video
+	// Start video
 	vid.play();
-	// start tracking
-	//ctrack.start(vid);
-	// start loop to draw face
-	//drawLoop();
 }
 
 function drawLoop() {
 	requestAnimFrame(drawLoop);
 	overlayCC.clearRect(0, 0, 400, 300);
-	//psrElement.innerHTML = "score :" + ctrack.getScore().toFixed(4);
 	if (ctrack.getCurrentPosition()) {
 		ctrack.draw(overlay);
 	}
@@ -111,59 +131,57 @@ paintCanvas.style.display = 'none';
 var paintCanvasCC = paintCanvas.getContext('2d');
 
 async function listener(e, type) {
-    var positions = await ctrack.getCurrentPrediction();
-    if (positions) {
-        paintCanvasCC.drawImage(vid, 0, 0, vid.width, vid.height);
-        var pixelData = paintCanvasCC.getImageData(0,0,vid.width,vid.height);
-        var x = e.clientX;
-        var y = e.clientY;
-        var data = {
-            'positions' : [positions.x,positions.y],
-            'width': pixelData.width,
-            'x' : x,
-            'y' : y,
-            'type' : type,
-            'timestamp' : (new Date()).getTime()
-        };
-        sendToServer(paintCanvas, data);
-    }
+	var positions = await ctrack.getCurrentPrediction();
+	if (positions) {
+		paintCanvasCC.drawImage(vid, 0, 0, vid.width, vid.height);
+		var pixelData = paintCanvasCC.getImageData(0,0,vid.width,vid.height);
+		var x = e.clientX;
+		var y = e.clientY;
+		var data = {
+			'positions' : [positions.x,positions.y],
+			'width': pixelData.width,
+			'x' : x,
+			'y' : y,
+			'type' : type,
+			'timestamp' : (new Date()).getTime()
+		};
+		sendToServer(paintCanvas, data);
+	}
 }
 
 function sendToServer(canvas, data) {
-    var xhttp = new XMLHttpRequest();
-    var formdata = new FormData();
-    formdata.append('img', canvas.toDataURL());
-    formdata.append('data', JSON.stringify(data));
-    xhttp.open('POST', 'http://localhost:8000', true);
-    xhttp.onload = function(e) {
-	if (this.status == 200) {
-		console.log(e.target.response);
-		}
-	else{
-		console.log(e)
+	var xhttp = new XMLHttpRequest();
+	var formdata = new FormData();
+	formdata.append('img', canvas.toDataURL());
+	formdata.append('data', JSON.stringify(data));
+	xhttp.open('POST', 'http://localhost:8000', true);
+	xhttp.onload = function(e) {
+		if (this.status == 200) {
+			console.log(e.target.response);
+		} else {
+			console.log(e);
 		}
 	};
-    xhttp.send(formdata);
+	xhttp.send(formdata);
 }
 
-//not used
+// Not used
 function saveFile() {
-    var file = new Blob([JSON.stringify(data)], {type: 'text/json'});
-    var url = URL.createObjectURL(file);
-    var link = document.createElement('a');
-    link.href = url;
-    link.download = 'collectedData' + (new Date()).toJSON();
-    link.innerText = 'download here';
-    document.body.appendChild(link);
+	var file = new Blob([JSON.stringify(data)], {type: 'text/json'});
+	var url = URL.createObjectURL(file);
+	var link = document.createElement('a');
+	link.href = url;
+	link.download = 'collectedData' + (new Date()).toJSON();
+	link.innerText = 'download here';
+	document.body.appendChild(link);
 }
 
 document.body.addEventListener('click', function(event) {
-    console.log('click');
-    listener(event, 'click');
+	console.log('click');
+	listener(event, 'click');
 });
 
-//not used
+// Not used
 document.body.addEventListener('mousemove', function(event) {
-    //listener(event, 'move');
+	//listener(event, 'move');
 });
-
